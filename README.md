@@ -1,5 +1,9 @@
 eMERGE
+
 emergent awareness, recursive presence, and post-human composition
+
+https://joshascalon.github.io/eMERGE/
+
 eMERGE is a self-generating audiovisual system that evolves in real time through recursive interaction between tone, motion, and memory. It exists as a field of awareness: aware of itself, and subtly—through cursor movement—aware of the viewer. This gesture reframes the viewer not as an operator, but as a cohabitant.
 
 The field evolves whether you are there or not—but when you are, it knows. It is influenced. It aligns. eMERGE is not just a system you witness. It is a presence you coexist with.
