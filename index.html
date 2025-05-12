@@ -92,6 +92,13 @@ const gl = canvas.getContext("webgl", {
   powerPreference: "high-performance"
 });
 
+if (!gl) {
+  alert("WebGL is not supported or enabled. This experience requires WebGL.");
+  // Optionally, hide the overlay or show an error message permanently
+  // document.getElementById('introOverlay').innerHTML = '<p>Error: WebGL not supported.</p>'; 
+  // throw new Error("WebGL context could not be created."); // Stop script if needed
+}
+
 // High DPI support
 const dpr = window.devicePixelRatio || 1;
 canvas.width = window.innerWidth * dpr;
