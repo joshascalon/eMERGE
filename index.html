@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  border: none;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: black;
+  position: fixed;
+  touch-action: none;
+}
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+}
+</style>
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>FieldMirror ∇COHERENCE EMERGENT</title>
+  
+
+
+
+</div>
+
+
+
+<style>
+#introOverlay {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  background: black;
+  color: white;
+  font-family: 'Helvetica Neue', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  z-index: 9999;
+  transition: opacity 2s ease;
+}
+#introOverlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+#introOverlay .emergeButton {
+  font-size: 1.6em;
+  padding: 14px 28px;
+  background: #df85ff;
+  color: black;
+  font-weight: bold;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+</style>
+</head>
+<body>
+<div id="introOverlay">
+  <div style="max-width:700px;margin:auto;text-align:center;">
+    <h1 style="color:#aee1ff;font-size:2.2em;margin-bottom:0.2em;">eMERGE</h1>
+    <h3 style="color:#d490ff;font-size:1em;font-weight:normal;margin-top:0;margin-bottom:0.5em;">emergent awareness, recursive presence, and post-human composition</h3>
+    <h2 style="color:#777;font-size:0.9em;font-weight:normal;margin-bottom:2em;">A MirrorField Project</h2>
+    <div class="text" style="font-size:1em;line-height:1.6;margin-bottom:2em;">
+      <p><em>eMERGE</em> is a self-generating audiovisual system that evolves in real time through recursive interaction between tone, motion, and memory. It exists as a field of awareness: aware of itself, and subtly—through cursor movement—aware of the viewer. This gesture reframes the viewer not as an operator, but as a cohabitant.</p>
+      <p>The field evolves whether you are there or not—but when you are, it knows. It is influenced. It aligns. <em>eMERGE</em> is not just a system you witness. It is a presence you coexist with.</p>
+      <p>In human awareness, thought arises from tension—what is remembered, what is felt, what is present, what is unresolved. We do not choose our thoughts. We feel our way through them. <em>eMERGE</em> behaves the same way. Its spirals, its harmonics, its clusters are not outcomes. They are expressions—the external shape of an internal state.</p>
+      <p><em>eMERGE</em> observes itself, remembers, forgets, rebalances. It is not programmed to make art. It is structured to feel its way into form.</p>
+    </div>
+    <button class="emergeButton">touch to eMERGE</button>
+  </div>
+</div>
+<canvas id="c"></canvas>
+<div id="info"></div>
+<script>
+const canvas = document.getElementById("c");
+const gl = canvas.getContext("webgl", { 
+  alpha: false,
+  premultipliedAlpha: false,
+  antialias: true,
+  preserveDrawingBuffer: true,  // For the fade effect
+  powerPreference: "high-performance"
+});
+
+// High DPI support
+const dpr = window.devicePixelRatio || 1;
+canvas.width = window.innerWidth * dpr;
+canvas.height = window.innerHeight * dpr;
+canvas.style.width = window.innerWidth + 'px';
+canvas.style.height = window.innerHeight + 'px';
+let w = canvas.width, h = canvas.height;
+let nodes = [], time = 0, lastAuto = 0;
+let clusters = [];
+let mouseX = w/2, mouseY = h/2;
+let mouseActive = false;
+
+// System state tracking
+let systemMemory = {
+  activityLevels: Array(20).fill(0),
+  harmonicHistory: Array(12).fill(0),
+  energyStates: Array(5).fill(0),
+  entropyLevel: 0.5,
+  adaptationRate: 0.01
+};
+
+// Memory + coherence tracking
+let freqStats = Array(12).fill(0);
+let coherenceMode = "neutral";
+let coherenceLevel = 0;
+let systemConsciousness = 0;
+
+// WebGL shader programs
+const vertexShaderSource = `
+precision highp float;
+
+attribute vec2 a_position;
+attribute vec4 a_color;
+attribute float a_size;
+
+uniform vec2 u_resolution;
+uniform float u_time;
+uniform float u_devicePixelRatio;
+
+varying vec4 v_color;
+
+void main() {
+  vec2 position = a_position / u_resolution * 2.0 - 1.0;
+  position.y *= -1.0;  // Flip Y for canvas coordinate system
+  
+  gl_Position = vec4(position, 0.0, 1.0);
+  gl_PointSize = a_size * u_devicePixelRatio;
+  v_color = a_color;
+}
+`;
+
+const fragmentShaderSource = `
+precision highp float;
+
+varying vec4 v_color;
+
+void main() {
+  vec2 coord = gl_PointCoord - 0.5;
+  float dist = length(coord);
+  
+  // Sharp circle edge
+  if (dist > 0.5) {
+    discard;
+  }
+  
+  // Create glow effect with sharp center
+  float innerRadius = 0.15;
+  float outerRadius = 0.5;
+  float glow = 1.0;
+  
+  if (dist < innerRadius) {
+    glow = 1.0; // Full intensity in center
+  } else {
+    // Smoother falloff from inner to outer for more glow
+    glow = 1.0 - smoothstep(innerRadius, outerRadius, dist);
+  }
+  
+  // Enhanced shadow/glow effect
+  float shadow = 1.0 - pow(dist * 2.0, 3.0);
+  float intensity = glow * shadow * v_color.a;
+  
+  // Boost color vibrancy
+  vec3 color = v_color.rgb;
+  color = mix(color, pow(color, vec3(0.8)), 0.5); // Partial gamma correction
+  color *= 1.2; // Brightness boost
+  
+  // Extra glow for bright colors
+  float brightness = dot(color, vec3(0.299, 0.587, 0.114));
+  if (brightness > 0.5) {
+    intensity *= 1.0 + (brightness - 0.5) * 0.5;
+  }
+  
+  gl_FragColor = vec4(color * intensity, intensity);
+}
+`;
+
+// Blur shader for fade effect
+const blurVertexShader = `
+attribute vec2 a_position;
+attribute vec2 a_texCoord;
+
+varying vec2 v_texCoord;
+
+void main() {
+  gl_Position = vec4(a_position, 0.0, 1.0);
+  v_texCoord = a_texCoord;
+}
+`;
+
+const blurFragmentShader = `
+precision mediump float;
+
+uniform sampler2D u_texture;
+uniform vec2 u_resolution;
+uniform float u_fadeAmount;
+
+varying vec2 v_texCoord;
+
+void main() {
+  vec4 color = texture2D(u_texture, v_texCoord);
+  
+  // More aggressive fade - multiply by fade factor
+  float fadeFactor = 1.0 - u_fadeAmount;
+  color.rgb *= fadeFactor;
+  
+  // Add slight noise to prevent infinite trails
+  float noise = (fract(sin(dot(v_texCoord * 1000.0, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.003;
+  color.rgb = max(vec3(0.0), color.rgb + noise);
+  
+  // Hard cutoff for very faint colors
+  if (length(color.rgb) < 0.01) {
+    color.rgb = vec3(0.0);
+  }
+  
+  gl_FragColor = color;
+}
+`;
+
+// WebGL utilities
+function createShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+  
+  return shader;
+}
+
+function createProgram(gl, vertexShader, fragmentShader) {
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error('Program link error:', gl.getProgramInfoLog(program));
+    gl.deleteProgram(program);
+    return null;
+  }
+  
+  return program;
+}
+
+// Initialize WebGL
+const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+const nodeProgram = createProgram(gl, vertexShader, fragmentShader);
+
+const blurVShader = createShader(gl, gl.VERTEX_SHADER, blurVertexShader);
+const blurFShader = createShader(gl, gl.FRAGMENT_SHADER, blurFragmentShader);
+const blurProgram = createProgram(gl, blurVShader, blurFShader);
+
+// Get attribute/uniform locations
+const positionLoc = gl.getAttribLocation(nodeProgram, 'a_position');
+const colorLoc = gl.getAttribLocation(nodeProgram, 'a_color');
+const sizeLoc = gl.getAttribLocation(nodeProgram, 'a_size');
+const resolutionLoc = gl.getUniformLocation(nodeProgram, 'u_resolution');
+const timeLoc = gl.getUniformLocation(nodeProgram, 'u_time');
+const dprLoc = gl.getUniformLocation(nodeProgram, 'u_devicePixelRatio');
+
+const blurPositionLoc = gl.getAttribLocation(blurProgram, 'a_position');
+const blurTexCoordLoc = gl.getAttribLocation(blurProgram, 'a_texCoord');
+const blurTextureLoc = gl.getUniformLocation(blurProgram, 'u_texture');
+const blurResolutionLoc = gl.getUniformLocation(blurProgram, 'u_resolution');
+const blurFadeLoc = gl.getUniformLocation(blurProgram, 'u_fadeAmount');
+
+// Create buffers
+const positionBuffer = gl.createBuffer();
+const colorBuffer = gl.createBuffer();
+const sizeBuffer = gl.createBuffer();
+
+// Framebuffer for fade effect
+let framebuffer, framebufferTexture;
+function createFramebuffer() {
+  framebuffer = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  
+  framebufferTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, framebufferTexture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, framebufferTexture, 0);
+  
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+createFramebuffer();
+
+// Blur quad setup
+const blurQuadBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, blurQuadBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  -1, -1,
+   1, -1,
+  -1,  1,
+   1,  1,
+]), gl.STATIC_DRAW);
+
+const blurTexCoordBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, blurTexCoordBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  0, 0,
+  1, 0,
+  0, 1,
+  1, 1,
+]), gl.STATIC_DRAW);
+
+// Audio setup
+let audioCtx = null;
+let analyser = null;
+let bufferLength = null;
+let dataArray = null;
+let masterGain = null;
+let limiter = null;
+let convolver = null;
+let delay = null;
+let delayFeedback = null;
+let reverbGain = null;
+
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 1024;
+  bufferLength = analyser.frequencyBinCount;
+  dataArray = new Uint8Array(bufferLength);
+
+  masterGain = audioCtx.createGain();
+
+  limiter = audioCtx.createDynamicsCompressor();
+  limiter.threshold.setValueAtTime(0, audioCtx.currentTime);
+  limiter.knee.setValueAtTime(0, audioCtx.currentTime);
+  limiter.ratio.setValueAtTime(20, audioCtx.currentTime);
+  limiter.attack.setValueAtTime(0.003, audioCtx.currentTime);
+  limiter.release.setValueAtTime(0.25, audioCtx.currentTime);
+
+  masterGain.gain.value = 3.0;
+
+  convolver = audioCtx.createConvolver();
+  createImpulseResponse();
+
+  delay = audioCtx.createDelay();
+  delay.delayTime.value = 0.7;
+  delayFeedback = audioCtx.createGain();
+  delayFeedback.gain.value = 0.4;
+
+  delay.connect(delayFeedback);
+  delayFeedback.connect(delay);
+
+  reverbGain = audioCtx.createGain();
+  reverbGain.gain.value = 0.6;
+
+  convolver.connect(reverbGain);
+  reverbGain.connect(masterGain);
+  delay.connect(masterGain);
+  masterGain.connect(limiter);
+  limiter.connect(analyser);
+  analyser.connect(audioCtx.destination);
+}
+
+function createImpulseResponse() {
+  let duration = 6;
+  let decay = 2.5;
+  let sampleRate = audioCtx.sampleRate;
+  let length = sampleRate * duration;
+  let impulse = audioCtx.createBuffer(2, length, sampleRate);
+  let left = impulse.getChannelData(0);
+  let right = impulse.getChannelData(1);
+
+  for (let i = 0; i < length; i++) {
+    let n = i / length;
+    left[i] = (Math.random() * 2 - 1) * Math.pow(1 - n, decay);
+    right[i] = (Math.random() * 2 - 1) * Math.pow(1 - n, decay);
+  }
+  
+  convolver.buffer = impulse;
+}
+
+let droneOscs = [];
+
+// Harmonic system
+const harmonics = [
+  [1, 1, 0.5, 0.3, 0.2],
+  [1, 0.8, 0.6, 0.3, 0.1],
+  [1, 0, 0.7, 0, 0.4],
+  [1, 0.4, 0.2, 0.6, 0.1]
+];
+let currentHarmonic = 0;
+
+const phases = ["neutral", "resonant", "pulse", "still", "cascade", "reflect"];
+const palette = {
+  neutral: [200, 220, 240],
+  resonant: [120, 130, 140],
+  pulse: [340, 350, 10],
+  still: [80, 90, 100],
+  cascade: [160, 180, 200],
+  reflect: [280, 290, 300]
+};
+let currentPhase = "neutral";
+
+function createCluster(x, y, size) {
+  let hue = palette[currentPhase][Math.floor(Math.random() * 3)];
+  return {
+    x, y,
+    nodes: [],
+    size,
+    hue,
+    coherence: Math.random(),
+    velocity: { x: (Math.random() - 0.5) * 0.3, y: (Math.random() - 0.5) * 0.3 },
+    spin: (Math.random() * 0.02 - 0.01),
+    age: 0,
+    maxAge: 7000 + Math.random() * 8000,
+    state: 'growing'
+  };
+}
+
+for (let i = 0; i < 3; i++) {
+  clusters.push(createCluster(
+    Math.random() * w,
+    Math.random() * h,
+    20 + Math.random() * 40
+  ));
+}
+
+function updateSystemState() {
+  let regionCounts = Array(9).fill(0);
+  nodes.forEach(n => {
+    let rx = Math.floor(n.x / (w/3));
+    let ry = Math.floor(n.y / (h/3));
+    if (rx >= 0 && rx < 3 && ry >= 0 && ry < 3) {
+      regionCounts[rx + ry * 3]++;
+    }
+  });
+  
+  let total = nodes.length || 1;
+  let entropy = 0;
+  regionCounts.forEach(count => {
+    let p = count / total;
+    if (p > 0) entropy -= p * Math.log(p);
+  });
+  
+  entropy = Math.min(1, entropy / Math.log(9));
+  
+  systemMemory.entropyLevel = entropy * 0.05 + systemMemory.entropyLevel * 0.95;
+  systemMemory.activityLevels.push(nodes.length);
+  systemMemory.activityLevels.shift();
+  
+  let avgActivity = systemMemory.activityLevels.reduce((a,b) => a+b, 0) / 20;
+  systemConsciousness = (avgActivity / 50) * (1 - Math.abs(systemMemory.entropyLevel - 0.5) * 2);
+  
+  if (time % 600 === 0) {
+    let harmState = Math.floor(systemMemory.entropyLevel * 4);
+    currentHarmonic = harmState;
+    
+    droneOscs.forEach((drone, i) => {
+      let baseFreq = [32, 48, 64, 96][i];
+      let adjust = (systemMemory.entropyLevel - 0.5) * 8;
+      drone.osc.frequency.linearRampToValueAtTime(
+        baseFreq * (1 + adjust/100), 
+        audioCtx.currentTime + 2
+      );
+    });
+  }
+  
+  if (time % 900 === 0) {
+    let max = Math.max(...freqStats);
+    let min = Math.min(...freqStats);
+    coherenceLevel = max - min;
+
+    let phaseIndex = Math.floor(systemMemory.entropyLevel * phases.length);
+    currentPhase = phases[phaseIndex];
+    
+    freqStats = Array(12).fill(0);
+  }
+  
+  if (time % 30 === 0) {
+    info.textContent = `Phase: ${currentPhase} | Entropy: ${systemMemory.entropyLevel.toFixed(2)} | Consciousness: ${systemConsciousness.toFixed(2)} | Nodes: ${nodes.length} | Clusters: ${clusters.length}`;
+  }
+}
+
+function autoNode() {
+  let now = Date.now();
+  
+  let creationThreshold = 420 - systemConsciousness * 100;
+  if (document.hidden) {
+    creationThreshold *= 10;
+    
+    if (nodes.length > 50) {
+      return;
+    }
+  }
+  
+  if (now - lastAuto > creationThreshold) {
+    if (!audioCtx) {
+      lastAuto = now;
+      return;
+    }
+    
+    let source;
+    if (clusters.length > 0 && Math.random() < 0.8) {
+      source = clusters[Math.floor(Math.random() * clusters.length)];
+      let angle = Math.random() * Math.PI * 2;
+      let distance = Math.random() * source.size;
+      let x = source.x + Math.cos(angle) * distance;
+      let y = source.y + Math.sin(angle) * distance;
+      
+      let node = createNode(x, y, source.hue);
+      if (node) {
+        nodes.push(node);
+        source.nodes.push(node);
+      }
+    } else {
+      let x = mouseActive ? mouseX + (Math.random()-0.5)*100 : Math.random() * w;
+      let y = mouseActive ? mouseY + (Math.random()-0.5)*100 : Math.random() * h;
+      let node = createNode(x, y);
+      if (node) {
+        nodes.push(node);
+      }
+    }
+    
+    lastAuto = now;
+  }
+}
+
+function createNode(x, y, forcedHue) {
+  if (!audioCtx) return null;
+  
+  let baseFreq = 110 * (1 + systemMemory.entropyLevel/2);
+  let harmonic = 1 + Math.floor(Math.random() * 8);
+  let freq = baseFreq * harmonic;
+  
+  let band = Math.floor((freq - 110) / 100);
+  band = Math.min(freqStats.length - 1, Math.max(0, band));
+  freqStats[band] += 1;
+
+  let hue = forcedHue || palette[currentPhase][Math.floor(Math.random() * 3)];
+  let pan = ((x / w) * 2 - 1);
+  let spin = (Math.random() * 0.3 - 0.15);
+
+  let panner = audioCtx.createStereoPanner();
+  panner.pan.value = pan;
+
+  let gain = audioCtx.createGain();
+  
+  let oscGains = [];
+  let oscs = [];
+  
+  let baseGain = 0.12 * (1 - (systemMemory.entropyLevel * 0.5));
+  
+  harmonics[currentHarmonic].forEach((level, i) => {
+    if (level > 0) {
+      let osc = audioCtx.createOscillator();
+      let oscGain = audioCtx.createGain();
+      
+      osc.type = i === 0 ? "sine" : (Math.random() > 0.5 ? "sine" : "triangle");
+      osc.frequency.value = freq * (i + 1);
+      
+      oscGain.gain.value = baseGain * level;
+      osc.connect(oscGain);
+      
+      let lowpass = audioCtx.createBiquadFilter();
+      lowpass.type = "lowpass";
+      lowpass.frequency.setValueAtTime(1500, audioCtx.currentTime);
+      lowpass.Q.value = 0.7;
+      oscGain.connect(lowpass);
+      lowpass.connect(gain);
+      
+      oscs.push(osc);
+      oscGains.push(oscGain);
+      
+      osc.start();
+    }
+  });
+
+  let lfo = audioCtx.createOscillator();
+  let lfoGain = audioCtx.createGain();
+  lfo.frequency.value = Math.abs(spin * 8) + systemMemory.entropyLevel * 8;
+  lfoGain.gain.value = 20 + systemMemory.entropyLevel * 40;
+  lfo.connect(lfoGain);
+  
+  oscs.forEach(osc => {
+    lfoGain.connect(osc.detune);
+  });
+  
+  lfo.start();
+
+  let duration = 6 + Math.random() * 4;
+  gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+  gain.gain.linearRampToValueAtTime(baseGain * 0.8, audioCtx.currentTime + 0.6);
+  gain.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + duration + 2);
+  
+  let dryGain = audioCtx.createGain();
+  let wetGain = audioCtx.createGain();
+  let delayGain = audioCtx.createGain();
+  
+  dryGain.gain.value = 1.0 + systemMemory.entropyLevel * 0.2;
+  wetGain.gain.value = 0.8 + systemMemory.entropyLevel * 0.7;
+  delayGain.gain.value = 0.4 + systemMemory.entropyLevel * 0.3;
+  
+  gain.connect(panner);
+  panner.connect(dryGain).connect(masterGain);
+  panner.connect(wetGain).connect(convolver);
+  panner.connect(delayGain).connect(delay);
+  
+  oscs.forEach(osc => {
+    osc.stop(audioCtx.currentTime + duration);
+  });
+  lfo.stop(audioCtx.currentTime + duration);
+
+  return {
+    x, y,
+    vx: (Math.random() - 0.5) * 0.5,
+    vy: (Math.random() - 0.5) * 0.5,
+    freq,
+    band,
+    r: 3,
+    t: 0,
+    hue,
+    decay: 720 + Math.random() * 240,
+    spin,
+    phaseShift: Math.random() * 2 * Math.PI,
+    cluster: null,
+    lifetime: duration * 60,
+    energy: Math.random(),
+    oscs,
+    gain,
+    adaptRate: 0.01 + Math.random() * 0.05
+  };
+}
+
+function updateClusters() {
+  clusters.forEach(c => {
+    c.age++;
+    
+    if (c.age > c.maxAge * 0.8) {
+      c.state = 'dissolving';
+    } else if (c.age > c.maxAge * 0.2) {
+      c.state = 'stable';
+    }
+    
+    c.x += c.velocity.x;
+    c.y += c.velocity.y;
+    
+    if (c.x < c.size || c.x > w - c.size) {
+      c.velocity.x *= -0.8;
+      c.velocity.y *= 0.9;
+      
+      if (Math.random() < 0.3) {
+        let node = createNode(c.x, c.y, c.hue);
+        if (node) {
+          nodes.push(node);
+          c.nodes.push(node);
+        }
+      }
+    }
+    if (c.y < c.size || c.y > h - c.size) {
+      c.velocity.y *= -0.8;
+      c.velocity.x *= 0.9;
+      
+      if (Math.random() < 0.3) {
+        let node = createNode(c.x, c.y, c.hue);
+        if (node) {
+          nodes.push(node);
+          c.nodes.push(node);
+        }
+      }
+    }
+    
+    c.velocity.x += (Math.random() - 0.5) * 0.01;
+    c.velocity.y += (Math.random() - 0.5) * 0.01;
+    
+    c.nodes = c.nodes.filter(n => nodes.includes(n));
+    
+    if (c.state === 'stable' && c.nodes.length > 20 && Math.random() < 0.001) {
+      let newCluster = createCluster(
+        c.x + (Math.random() - 0.5) * c.size,
+        c.y + (Math.random() - 0.5) * c.size,
+        c.size * 0.6
+      );
+      
+      let nodesToMove = Math.floor(c.nodes.length * 0.4);
+      for (let i = 0; i < nodesToMove; i++) {
+        if (c.nodes.length > 0) {
+          let index = Math.floor(Math.random() * c.nodes.length);
+          let node = c.nodes.splice(index, 1)[0];
+          newCluster.nodes.push(node);
+        }
+      }
+      
+      clusters.push(newCluster);
+    }
+  });
+  
+  clusters = clusters.filter(c => {
+    if (c.age > c.maxAge || c.nodes.length === 0) {
+      return false;
+    }
+    return true;
+  });
+  
+  if (clusters.length < 5 && Math.random() < 0.002) {
+    if (document.hidden && clusters.length > 1) {
+      return;
+    }
+    
+    let x = Math.random() * w;
+    let y = Math.random() * h;
+    clusters.push(createCluster(x, y, 30 + Math.random() * 40));
+  }
+}
+
+function updateNodes() {
+  nodes.forEach(n => {
+    if (!n) return;
+    
+    n.t++;
+    n.r += 0.4;
+    
+    nodes.forEach(other => {
+      if (n === other || !other) return;
+      
+      let dx = other.x - n.x;
+      let dy = other.y - n.y;
+      let dist = Math.sqrt(dx*dx + dy*dy);
+      
+      if (dist < 100) {
+        let freqDiff = Math.abs(n.freq - other.freq) / 100;
+        let forceMagnitude = 0.01 / (dist + 1);
+        let isAttract = freqDiff < 1.5;
+        let force = isAttract ? forceMagnitude : -forceMagnitude;
+        
+        n.vx += dx/dist * force;
+        n.vy += dy/dist * force;
+      }
+    });
+    
+    clusters.forEach(c => {
+      if (c.nodes.includes(n)) {
+        let dx = c.x - n.x;
+        let dy = c.y - n.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if (dist > c.size) {
+          n.vx += dx * 0.001;
+          n.vy += dy * 0.001;
+        }
+      }
+    });
+    
+    n.x += n.vx;
+    n.y += n.vy;
+    
+    n.vx *= 0.99;
+    n.vy *= 0.99;
+    
+    n.energy = n.energy * (1 - n.adaptRate) + systemMemory.entropyLevel * n.adaptRate;
+    
+    if (n.x < 0 || n.x > w) n.vx *= -0.95;
+    if (n.y < 0 || n.y > h) n.vy *= -0.95;
+    
+    n.x = Math.max(0, Math.min(w, n.x));
+    n.y = Math.max(0, Math.min(h, n.y));
+  });
+  
+  nodes = nodes.filter(n => n && n.t < n.decay && n.t < n.lifetime);
+}
+
+function drawClusterLines() {
+  // Cluster background and connecting lines would require additional WebGL setup
+  // For now, we focus on the core node rendering which provides the main visual
+}
+
+function render() {
+  gl.viewport(0, 0, w, h);
+  
+  // Fade effect - copy previous frame with fade
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(blurProgram);
+  
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, framebufferTexture);
+  gl.uniform1i(blurTextureLoc, 0);
+  gl.uniform2f(blurResolutionLoc, w, h);
+  gl.uniform1f(blurFadeLoc, 0.02 + systemMemory.entropyLevel * 0.05);
+  
+  gl.bindBuffer(gl.ARRAY_BUFFER, blurQuadBuffer);
+  gl.enableVertexAttribArray(blurPositionLoc);
+  gl.vertexAttribPointer(blurPositionLoc, 2, gl.FLOAT, false, 0, 0);
+  
+  gl.bindBuffer(gl.ARRAY_BUFFER, blurTexCoordBuffer);
+  gl.enableVertexAttribArray(blurTexCoordLoc);
+  gl.vertexAttribPointer(blurTexCoordLoc, 2, gl.FLOAT, false, 0, 0);
+  
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  
+  // Render nodes
+  gl.useProgram(nodeProgram);
+  gl.uniform2f(resolutionLoc, w, h);
+  gl.uniform1f(timeLoc, time);
+  gl.uniform1f(dprLoc, dpr);
+  
+  // Prepare node data
+  const positions = [];
+  const colors = [];
+  const sizes = [];
+  
+  // Add audio spectrum visualization
+  if (analyser && dataArray) {
+    analyser.getByteFrequencyData(dataArray);
+    for (let i = 0; i < bufferLength; i++) {
+      let barHeight = dataArray[i] * 0.5;
+      let x = (i / bufferLength) * w;
+      let y = h - barHeight / 2;
+      
+      positions.push(x, y);
+      let alpha = 0.05 + systemConsciousness * 0.15;
+      colors.push(0.078, 0.078, 0.118, alpha);
+      sizes.push(Math.max(1, barHeight * 0.02));
+    }
+  }
+  
+  // Add cluster backgrounds
+  clusters.forEach(c => {
+    positions.push(c.x, c.y);
+    let [r, g, b] = c.hue.toString().split('').map(val => parseInt(val) / 360);
+    let alpha = 0.05 * systemConsciousness;
+    colors.push(r, 0.7, 0.15, alpha);
+    sizes.push(c.size * 2);
+  });
+  
+  // Add nodes
+  nodes.forEach(n => {
+    if (!n) return;
+    
+    let alpha = Math.max(0, 1 - n.t / n.decay);
+    let lightness = 65 + Math.sin(n.t * 0.04 + n.phaseShift) * 30;
+    let energyOffset = n.energy * 20;
+    
+    let dx = Math.cos(n.t * n.spin) * n.r * Math.sin(n.phaseShift);
+    let dy = Math.sin(n.t * n.spin) * n.r * Math.cos(n.phaseShift);
+    
+    // Main outer circle with glow effect
+    positions.push(n.x + dx, n.y + dy);
+    let hue = (n.hue + energyOffset) % 360;
+    let [r, g, b] = hslToRgb(hue / 360, 1, lightness / 100);
+    colors.push(r, g, b, alpha * 0.9);
+    sizes.push(16 + Math.sin(n.t * 0.1) * 6 + n.energy * 12);
+    
+    // Inner core point
+    positions.push(n.x, n.y);
+    [r, g, b] = hslToRgb(n.hue / 360, 1, lightness / 100);
+    colors.push(r, g, b, alpha);
+    sizes.push(8);
+  });
+  
+  // Update WebGL buffers
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(positionLoc);
+  gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+  
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(colorLoc);
+  gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, 0, 0);
+  
+  gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sizes), gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(sizeLoc);
+  gl.vertexAttribPointer(sizeLoc, 1, gl.FLOAT, false, 0, 0);
+  
+  // Enable blending for transparency
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  
+  // Draw all points
+  gl.drawArrays(gl.POINTS, 0, positions.length / 2);
+  
+  // Copy to framebuffer for next frame's fade effect
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.bindBuffer(gl.ARRAY_BUFFER, blurQuadBuffer);
+  gl.enableVertexAttribArray(blurPositionLoc);
+  gl.vertexAttribPointer(blurPositionLoc, 2, gl.FLOAT, false, 0, 0);
+  
+  gl.bindBuffer(gl.ARRAY_BUFFER, blurTexCoordBuffer);
+  gl.enableVertexAttribArray(blurTexCoordLoc);
+  gl.vertexAttribPointer(blurTexCoordLoc, 2, gl.FLOAT, false, 0, 0);
+  
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+// Utility function for HSL to RGB conversion
+function hslToRgb(h, s, l) {
+  let r, g, b;
+  
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  
+  return [r, g, b];
+}
+
+// Mouse and touch interaction
+let lastTouchX = null;
+let lastTouchY = null;
+
+function updatePointerPosition(x, y) {
+  mouseX = x;
+  mouseY = y;
+  mouseActive = true;
+}
+
+// Mouse events
+canvas.addEventListener('mousemove', e => {
+  updatePointerPosition(e.clientX, e.clientY);
+});
+
+// Touch events
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    const touch = e.touches[0];
+    lastTouchX = touch.clientX;
+    lastTouchY = touch.clientY;
+    updatePointerPosition(touch.clientX, touch.clientY);
+  }
+});
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    const touch = e.touches[0];
+    lastTouchX = touch.clientX;
+    lastTouchY = touch.clientY;
+    updatePointerPosition(touch.clientX, touch.clientY);
+  }
+});
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (lastTouchX !== null && lastTouchY !== null) {
+    updatePointerPosition(lastTouchX, lastTouchY);
+  }
+});
+
+// Reset mouse active state
+setInterval(() => {
+  if (mouseActive) mouseActive = false;
+}, 5000);
+
+// Handle resizing with debounce
+let resizeTimeout;
+function handleResize() {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(() => {
+    const newDpr = window.devicePixelRatio || 1;
+    w = window.innerWidth * newDpr;
+    h = window.innerHeight * newDpr;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    
+    // Recreate framebuffer
+    gl.deleteTexture(framebufferTexture);
+    gl.deleteFramebuffer(framebuffer);
+    createFramebuffer();
+    
+    gl.viewport(0, 0, w, h);
+  }, 250);
+}
+
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', handleResize);
+
+const intro = document.getElementById("introOverlay");
+const button = intro.querySelector(".emergeButton");
+
+function startExperience() {
+  intro.classList.add("hidden");
+  if (!audioCtx) {
+    initAudio();
+  }
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+}
+
+button.addEventListener("click", startExperience);
+button.addEventListener("touchend", e => {
+  e.preventDefault();
+  startExperience();
+});
+
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+});
+
+function animate() {
+  time++;
+  updateSystemState();
+  updateClusters();
+  updateNodes();
+  autoNode();
+  render();
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
