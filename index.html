@@ -73,18 +73,23 @@ canvas {
 /* iOS Safari fallback button */
 #iosSafariButton {
   position: fixed;
-  top: 50%;
+  bottom: 20%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   font-size: 1.6em;
   padding: 14px 28px;
-  background: #ff5edc;
+  background: #df85ff;
   color: black;
   font-weight: bold;
   border: 2px solid white;
   border-radius: 10px;
   z-index: 10001;
   display: none;
+  transition: opacity 2s ease;
+}
+#iosSafariButton.hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 @supports (-webkit-touch-callout: none) {
   /* iOS specific - make fallback button visible only on iOS */
@@ -112,7 +117,7 @@ canvas {
 <canvas id="c"></canvas>
 <div id="info"></div>
 <!-- iOS Safari-specific fallback button that will only be visible on iOS devices -->
-<button id="iosSafariButton">Start eMERGE</button>
+<button id="iosSafariButton">touch to eMERGE</button>
 <script>
 const canvas = document.getElementById("c");
 const gl = canvas.getContext("webgl", { 
@@ -383,43 +388,94 @@ let delayFeedback = null;
 let reverbGain = null;
 
 function initAudio() {
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 512; // Reduce from 1024 to 512 for lower CPU usage
-  bufferLength = analyser.frequencyBinCount;
-  dataArray = new Uint8Array(bufferLength);
+  // On iOS, we need to create the AudioContext directly in response to user input
+  try {
+    console.log("Creating AudioContext...");
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    console.log("AudioContext created successfully, state: " + audioCtx.state);
+  } catch (e) {
+    console.error("Error creating AudioContext:", e.message);
+    return; // Exit if we can't create the audio context
+  }
+  
+  try {
+    // Set up the audio system with error checking at each step
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512; // Reduce from 1024 to 512 for lower CPU usage
+    bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
 
-  masterGain = audioCtx.createGain();
+    masterGain = audioCtx.createGain();
+    
+    // For iOS, start with a lower master gain
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    masterGain.gain.value = isIOS ? 1.0 : 1.5;
+    
+    try {
+      limiter = audioCtx.createDynamicsCompressor();
+      limiter.threshold.setValueAtTime(-6, audioCtx.currentTime);
+      limiter.knee.setValueAtTime(0, audioCtx.currentTime);
+      limiter.ratio.setValueAtTime(20, audioCtx.currentTime);
+      limiter.attack.setValueAtTime(0.001, audioCtx.currentTime);
+      limiter.release.setValueAtTime(0.25, audioCtx.currentTime);
+    } catch (e) {
+      console.error("Error creating compressor:", e.message);
+      // Continue without the limiter if it fails
+      limiter = null;
+    }
 
-  limiter = audioCtx.createDynamicsCompressor();
-  limiter.threshold.setValueAtTime(-6, audioCtx.currentTime); // More aggressive threshold (-6 dB instead of 0)
-  limiter.knee.setValueAtTime(0, audioCtx.currentTime);
-  limiter.ratio.setValueAtTime(20, audioCtx.currentTime);
-  limiter.attack.setValueAtTime(0.001, audioCtx.currentTime); // Faster attack
-  limiter.release.setValueAtTime(0.25, audioCtx.currentTime);
+    try {
+      convolver = audioCtx.createConvolver();
+      createImpulseResponse();
+    } catch (e) {
+      console.error("Error creating convolver:", e.message);
+      convolver = null;
+    }
 
-  masterGain.gain.value = 1.5; // Further reduce from 2.0 to 1.5
+    try {
+      delay = audioCtx.createDelay();
+      delay.delayTime.value = 0.7;
+      delayFeedback = audioCtx.createGain();
+      delayFeedback.gain.value = 0.4;
+      
+      delay.connect(delayFeedback);
+      delayFeedback.connect(delay);
+    } catch (e) {
+      console.error("Error creating delay:", e.message);
+      delay = null;
+      delayFeedback = null;
+    }
 
-  convolver = audioCtx.createConvolver();
-  createImpulseResponse();
-
-  delay = audioCtx.createDelay();
-  delay.delayTime.value = 0.7;
-  delayFeedback = audioCtx.createGain();
-  delayFeedback.gain.value = 0.4;
-
-  delay.connect(delayFeedback);
-  delayFeedback.connect(delay);
-
-  reverbGain = audioCtx.createGain();
-  reverbGain.gain.value = 0.4;
-
-  convolver.connect(reverbGain);
-  reverbGain.connect(masterGain);
-  delay.connect(masterGain);
-  masterGain.connect(limiter);
-  limiter.connect(analyser);
-  analyser.connect(audioCtx.destination);
+    try {
+      reverbGain = audioCtx.createGain();
+      reverbGain.gain.value = 0.4;
+      
+      if (convolver) {
+        convolver.connect(reverbGain);
+        reverbGain.connect(masterGain);
+      }
+    } catch (e) {
+      console.error("Error connecting reverb:", e.message);
+    }
+    
+    // Connect components with null checking
+    if (delay) {
+      delay.connect(masterGain);
+    }
+    
+    if (limiter) {
+      masterGain.connect(limiter);
+      limiter.connect(analyser);
+    } else {
+      masterGain.connect(analyser);
+    }
+    
+    analyser.connect(audioCtx.destination);
+    
+    console.log("Audio system initialization complete");
+  } catch (e) {
+    console.error("Error in audio system setup:", e.message);
+  }
 }
 
 function createImpulseResponse() {
@@ -1109,6 +1165,8 @@ function triggerExperience(event) {
   experienceHasBegun = true;
 
   intro.classList.add("hidden");
+  // Also hide the iOS Safari fallback button
+  document.getElementById("iosSafariButton").classList.add("hidden");
 
   let audioUnlockPromise = Promise.resolve();
 
@@ -1162,13 +1220,49 @@ function triggerExperience(event) {
   }
 }
 
+// After function triggerExperience definition and before canvas event listeners
+// Add a specialized iOS audio unlock function
+function unlockAudioForIOS() {
+  console.log("Attempting specialized iOS audio unlock");
+  
+  // Create a dummy audio buffer and play it
+  const buffer = audioCtx.createBuffer(1, 1, 22050);
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  
+  // Play the source immediately
+  if (source.start) {
+    source.start(0);
+  } else if (source.noteOn) { // Older implementations
+    source.noteOn(0);
+  }
+  
+  // On iOS, we need to hook into the window.touchend event as well
+  window.removeEventListener('touchend', unlockAudioForIOS);
+  
+  console.log("iOS audio unlock attempt complete");
+}
+
 button.addEventListener("click", triggerExperience);
-button.addEventListener("touchend", triggerExperience);
+button.addEventListener("touchend", function(e) {
+  triggerExperience(e);
+  // On iOS, try the specialized unlock immediately after triggering
+  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    setTimeout(unlockAudioForIOS, 100);
+  }
+});
 
 // Add event listeners for the iOS Safari fallback button
 const iosSafariButton = document.getElementById("iosSafariButton");
 iosSafariButton.addEventListener("click", triggerExperience);
-iosSafariButton.addEventListener("touchend", triggerExperience);
+iosSafariButton.addEventListener("touchend", function(e) {
+  triggerExperience(e);
+  // On iOS, try the specialized unlock immediately after triggering
+  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    setTimeout(unlockAudioForIOS, 100);
+  }
+});
 
 canvas.addEventListener('contextmenu', e => {
   e.preventDefault();
