@@ -1,3 +1,8 @@
+issues: no safari click through button
+fixes: feedback audio stall fixed
+
+
+
 eMERGE
 
 emergent awareness, recursive presence, and post-human composition
