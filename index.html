@@ -111,6 +111,10 @@ let clusters = [];
 let mouseX = w/2, mouseY = h/2;
 let mouseActive = false;
 
+const MAX_NODES = 200; // Maximum active nodes, tune this value
+const MAX_CLUSTERS = 10; // Maximum active clusters, tune this value
+const MAX_NODES_WHEN_HIDDEN = 50; // Reduced node limit when tab is not visible
+
 // System state tracking
 let systemMemory = {
   activityLevels: Array(20).fill(0),
@@ -361,7 +365,7 @@ function initAudio() {
   limiter.attack.setValueAtTime(0.003, audioCtx.currentTime);
   limiter.release.setValueAtTime(0.25, audioCtx.currentTime);
 
-  masterGain.gain.value = 3.0;
+  masterGain.gain.value = 2.0;
 
   convolver = audioCtx.createConvolver();
   createImpulseResponse();
@@ -375,7 +379,7 @@ function initAudio() {
   delayFeedback.connect(delay);
 
   reverbGain = audioCtx.createGain();
-  reverbGain.gain.value = 0.6;
+  reverbGain.gain.value = 0.4;
 
   convolver.connect(reverbGain);
   reverbGain.connect(masterGain);
@@ -509,15 +513,22 @@ function autoNode() {
   let now = Date.now();
   
   let creationThreshold = 420 - systemConsciousness * 100;
+  
   if (document.hidden) {
-    creationThreshold *= 10;
-    
-    if (nodes.length > 50) {
+    creationThreshold *= 10; 
+    // Use the new constant for hidden tabs and check before proceeding
+    if (nodes.length >= MAX_NODES_WHEN_HIDDEN) {
       return;
     }
   }
   
   if (now - lastAuto > creationThreshold) {
+    // If tab is visible, check against the general MAX_NODES limit before creating a node
+    if (!document.hidden && nodes.length >= MAX_NODES) {
+        lastAuto = now; // Reset timer to avoid rapid checks if threshold is small
+        return;
+    }
+
     if (!audioCtx) {
       lastAuto = now;
       return;
@@ -621,8 +632,8 @@ function createNode(x, y, forcedHue) {
   let delayGain = audioCtx.createGain();
   
   dryGain.gain.value = 1.0 + systemMemory.entropyLevel * 0.2;
-  wetGain.gain.value = 0.8 + systemMemory.entropyLevel * 0.7;
-  delayGain.gain.value = 0.4 + systemMemory.entropyLevel * 0.3;
+  wetGain.gain.value = 0.5 + systemMemory.entropyLevel * 0.5;
+  delayGain.gain.value = 0.3 + systemMemory.entropyLevel * 0.2;
   
   gain.connect(panner);
   panner.connect(dryGain).connect(masterGain);
@@ -672,7 +683,8 @@ function updateClusters() {
       c.velocity.x *= -0.8;
       c.velocity.y *= 0.9;
       
-      if (Math.random() < 0.3) {
+      // Check MAX_NODES before creating a new node from wall hit
+      if (nodes.length < MAX_NODES && Math.random() < 0.3) {
         let node = createNode(c.x, c.y, c.hue);
         if (node) {
           nodes.push(node);
@@ -684,7 +696,8 @@ function updateClusters() {
       c.velocity.y *= -0.8;
       c.velocity.x *= 0.9;
       
-      if (Math.random() < 0.3) {
+      // Check MAX_NODES before creating a new node from wall hit
+      if (nodes.length < MAX_NODES && Math.random() < 0.3) {
         let node = createNode(c.x, c.y, c.hue);
         if (node) {
           nodes.push(node);
@@ -698,7 +711,8 @@ function updateClusters() {
     
     c.nodes = c.nodes.filter(n => nodes.includes(n));
     
-    if (c.state === 'stable' && c.nodes.length > 20 && Math.random() < 0.001) {
+    // Check MAX_CLUSTERS before creating a new cluster from an existing one
+    if (clusters.length < MAX_CLUSTERS && c.state === 'stable' && c.nodes.length > 20 && Math.random() < 0.001) {
       let newCluster = createCluster(
         c.x + (Math.random() - 0.5) * c.size,
         c.y + (Math.random() - 0.5) * c.size,
@@ -725,7 +739,8 @@ function updateClusters() {
     return true;
   });
   
-  if (clusters.length < 5 && Math.random() < 0.002) {
+  // Check MAX_CLUSTERS before creating a general new cluster
+  if (clusters.length < MAX_CLUSTERS && Math.random() < 0.002) {
     if (document.hidden && clusters.length > 1) {
       return;
     }
@@ -1021,21 +1036,46 @@ window.addEventListener('orientationchange', handleResize);
 const intro = document.getElementById("introOverlay");
 const button = intro.querySelector(".emergeButton");
 
-function startExperience() {
+let experienceHasBegun = false; // Flag to ensure a single execution
+
+function triggerExperience(event) {
+  if (event.type === "touchend") {
+    event.preventDefault(); // Important for preventing issues like synthetic clicks or zoom on touch
+  }
+
+  if (experienceHasBegun) {
+    return; // Avoid running the logic multiple times
+  }
+  experienceHasBegun = true;
+
   intro.classList.add("hidden");
+
+  // Initialize audio if it hasn't been already
   if (!audioCtx) {
     initAudio();
   }
+
+  // Resume AudioContext if it's suspended (common on iOS until user interaction)
   if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume();
+    audioCtx.resume().then(() => {
+      console.log('AudioContext resumed successfully on event: ' + event.type);
+    }).catch(e => {
+      console.error('AudioContext resume failed on event: ' + event.type + ':', e.message);
+      // Optionally, inform the user via an alert or UI message if audio is critical
+      // alert('Could not initialize audio: ' + e.message);
+      // Consider if experienceHasBegun should be reset to allow another attempt
+      // experienceHasBegun = false; 
+    });
+  } else if (audioCtx) {
+    console.log('AudioContext state on event ' + event.type + ': ' + audioCtx.state);
+  } else {
+    console.error('AudioContext is null even after initAudio attempt on event ' + event.type);
+    // alert('Audio system could not be initialized.');
   }
 }
 
-button.addEventListener("click", startExperience);
-button.addEventListener("touchend", e => {
-  e.preventDefault();
-  startExperience();
-});
+button.addEventListener("click", triggerExperience);
+button.addEventListener("touchend", triggerExperience);
 
 canvas.addEventListener('contextmenu', e => {
   e.preventDefault();
