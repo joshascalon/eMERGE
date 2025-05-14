@@ -47,6 +47,8 @@ canvas {
   text-align: center;
   z-index: 9999;
   transition: opacity 2s ease;
+  top: 0;
+  left: 0;
 }
 #introOverlay.hidden {
   opacity: 0;
@@ -58,10 +60,37 @@ canvas {
   background: #df85ff;
   color: black;
   font-weight: bold;
-  border: none;
+  border: 2px solid white;
   border-radius: 10px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  display: block;
+  margin: 20px auto;
+  position: relative;
+  z-index: 10000;
+  box-shadow: 0 0 10px rgba(255,255,255,0.5);
+}
+/* iOS Safari fallback button */
+#iosSafariButton {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.6em;
+  padding: 14px 28px;
+  background: #ff5edc;
+  color: black;
+  font-weight: bold;
+  border: 2px solid white;
+  border-radius: 10px;
+  z-index: 10001;
+  display: none;
+}
+@supports (-webkit-touch-callout: none) {
+  /* iOS specific - make fallback button visible only on iOS */
+  #iosSafariButton {
+    display: block;
+  }
 }
 </style>
 </head>
@@ -82,6 +111,8 @@ canvas {
 </div>
 <canvas id="c"></canvas>
 <div id="info"></div>
+<!-- iOS Safari-specific fallback button that will only be visible on iOS devices -->
+<button id="iosSafariButton">Start eMERGE</button>
 <script>
 const canvas = document.getElementById("c");
 const gl = canvas.getContext("webgl", { 
@@ -111,9 +142,11 @@ let clusters = [];
 let mouseX = w/2, mouseY = h/2;
 let mouseActive = false;
 
-const MAX_NODES = 200; // Maximum active nodes, tune this value
+// Audio setup constants
+const MAX_NODES = 150; // Reduce from 200 to 150 to lessen audio strain
 const MAX_CLUSTERS = 10; // Maximum active clusters, tune this value
 const MAX_NODES_WHEN_HIDDEN = 50; // Reduced node limit when tab is not visible
+const MAX_OSCILLATORS_PER_NODE = 3; // Limit harmonics/complexity for audio stability
 
 // System state tracking
 let systemMemory = {
@@ -352,20 +385,20 @@ let reverbGain = null;
 function initAudio() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 1024;
+  analyser.fftSize = 512; // Reduce from 1024 to 512 for lower CPU usage
   bufferLength = analyser.frequencyBinCount;
   dataArray = new Uint8Array(bufferLength);
 
   masterGain = audioCtx.createGain();
 
   limiter = audioCtx.createDynamicsCompressor();
-  limiter.threshold.setValueAtTime(0, audioCtx.currentTime);
+  limiter.threshold.setValueAtTime(-6, audioCtx.currentTime); // More aggressive threshold (-6 dB instead of 0)
   limiter.knee.setValueAtTime(0, audioCtx.currentTime);
   limiter.ratio.setValueAtTime(20, audioCtx.currentTime);
-  limiter.attack.setValueAtTime(0.003, audioCtx.currentTime);
+  limiter.attack.setValueAtTime(0.001, audioCtx.currentTime); // Faster attack
   limiter.release.setValueAtTime(0.25, audioCtx.currentTime);
 
-  masterGain.gain.value = 2.0;
+  masterGain.gain.value = 1.5; // Further reduce from 2.0 to 1.5
 
   convolver = audioCtx.createConvolver();
   createImpulseResponse();
@@ -583,46 +616,62 @@ function createNode(x, y, forcedHue) {
   let oscGains = [];
   let oscs = [];
   
-  let baseGain = 0.12 * (1 - (systemMemory.entropyLevel * 0.5));
+  let baseGain = 0.1 * (1 - (systemMemory.entropyLevel * 0.5)); // Reduced from 0.12 to 0.1
   
-  harmonics[currentHarmonic].forEach((level, i) => {
+  // Limit the number of oscillators per node for performance
+  let oscillatorsToCreate = Math.min(MAX_OSCILLATORS_PER_NODE, harmonics[currentHarmonic].length);
+  
+  for (let i = 0; i < oscillatorsToCreate; i++) {
+    let level = harmonics[currentHarmonic][i];
     if (level > 0) {
       let osc = audioCtx.createOscillator();
       let oscGain = audioCtx.createGain();
       
-      osc.type = i === 0 ? "sine" : (Math.random() > 0.5 ? "sine" : "triangle");
+      // Prefer sine waves for better performance and less complexity
+      osc.type = i === 0 ? "sine" : (Math.random() > 0.7 ? "sine" : "triangle");
       osc.frequency.value = freq * (i + 1);
       
       oscGain.gain.value = baseGain * level;
       osc.connect(oscGain);
       
-      let lowpass = audioCtx.createBiquadFilter();
-      lowpass.type = "lowpass";
-      lowpass.frequency.setValueAtTime(1500, audioCtx.currentTime);
-      lowpass.Q.value = 0.7;
-      oscGain.connect(lowpass);
-      lowpass.connect(gain);
+      // Only use lowpass filter on the first oscillator for performance
+      if (i === 0) {
+        let lowpass = audioCtx.createBiquadFilter();
+        lowpass.type = "lowpass";
+        lowpass.frequency.setValueAtTime(1500, audioCtx.currentTime);
+        lowpass.Q.value = 0.7;
+        oscGain.connect(lowpass);
+        lowpass.connect(gain);
+      } else {
+        oscGain.connect(gain);
+      }
       
       oscs.push(osc);
       oscGains.push(oscGain);
       
       osc.start();
     }
-  });
+  }
 
-  let lfo = audioCtx.createOscillator();
-  let lfoGain = audioCtx.createGain();
-  lfo.frequency.value = Math.abs(spin * 8) + systemMemory.entropyLevel * 8;
-  lfoGain.gain.value = 20 + systemMemory.entropyLevel * 40;
-  lfo.connect(lfoGain);
+  // Only create LFO modulation if system isn't too busy
+  let lfo = null;
+  let lfoGain = null;
   
-  oscs.forEach(osc => {
-    lfoGain.connect(osc.detune);
-  });
-  
-  lfo.start();
+  if (nodes.length < MAX_NODES * 0.7) { // Only add LFO if we're below 70% capacity
+    lfo = audioCtx.createOscillator();
+    lfoGain = audioCtx.createGain();
+    lfo.frequency.value = Math.abs(spin * 8) + systemMemory.entropyLevel * 4; // Reduced modulation
+    lfoGain.gain.value = 15 + systemMemory.entropyLevel * 30; // Reduced from 20/40 to 15/30
+    lfo.connect(lfoGain);
+    
+    oscs.forEach(osc => {
+      lfoGain.connect(osc.detune);
+    });
+    
+    lfo.start();
+  }
 
-  let duration = 6 + Math.random() * 4;
+  let duration = 5 + Math.random() * 3; // Slightly shorter from 6+4 to 5+3
   gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
   gain.gain.linearRampToValueAtTime(baseGain * 0.8, audioCtx.currentTime + 0.6);
   gain.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + duration + 2);
@@ -631,19 +680,30 @@ function createNode(x, y, forcedHue) {
   let wetGain = audioCtx.createGain();
   let delayGain = audioCtx.createGain();
   
-  dryGain.gain.value = 1.0 + systemMemory.entropyLevel * 0.2;
-  wetGain.gain.value = 0.5 + systemMemory.entropyLevel * 0.5;
-  delayGain.gain.value = 0.3 + systemMemory.entropyLevel * 0.2;
+  dryGain.gain.value = 1.0 + systemMemory.entropyLevel * 0.1; // Reduced from 0.2 to 0.1
+  wetGain.gain.value = 0.4 + systemMemory.entropyLevel * 0.3; // Reduced further from 0.5/0.5 to 0.4/0.3
+  delayGain.gain.value = 0.2 + systemMemory.entropyLevel * 0.15; // Reduced further from 0.3/0.2 to 0.2/0.15
   
   gain.connect(panner);
   panner.connect(dryGain).connect(masterGain);
-  panner.connect(wetGain).connect(convolver);
-  panner.connect(delayGain).connect(delay);
   
+  // Only connect to effects if system isn't too busy to prevent feedback loops
+  if (nodes.length < MAX_NODES * 0.8) { // Only connect to effects if below 80% capacity
+    panner.connect(wetGain).connect(convolver);
+    
+    if (nodes.length < MAX_NODES * 0.6) { // Only use delay for lower node counts
+      panner.connect(delayGain).connect(delay);
+    }
+  }
+  
+  // Stop all oscillators when done
   oscs.forEach(osc => {
     osc.stop(audioCtx.currentTime + duration);
   });
-  lfo.stop(audioCtx.currentTime + duration);
+  
+  if (lfo) {
+    lfo.stop(audioCtx.currentTime + duration);
+  }
 
   return {
     x, y,
@@ -1050,32 +1110,65 @@ function triggerExperience(event) {
 
   intro.classList.add("hidden");
 
+  let audioUnlockPromise = Promise.resolve();
+
   // Initialize audio if it hasn't been already
   if (!audioCtx) {
-    initAudio();
+    initAudio(); // This is where audioCtx is created
   }
 
-  // Resume AudioContext if it's suspended (common on iOS until user interaction)
-  if (audioCtx && audioCtx.state === "suspended") {
-    audioCtx.resume().then(() => {
-      console.log('AudioContext resumed successfully on event: ' + event.type);
+  if (audioCtx) { // Check if audioCtx was successfully created in initAudio
+    // Resume AudioContext if it's suspended (common on iOS until user interaction)
+    if (audioCtx.state === "suspended") {
+      audioUnlockPromise = audioCtx.resume().then(() => {
+        console.log('AudioContext resumed successfully on event: ' + event.type);
+      }).catch(e => {
+        console.error('AudioContext resume failed on event: ' + event.type + ':', e.message);
+        // experienceHasBegun = false; // Optionally allow another attempt if resume fails
+        throw e; // Propagate error to stop further audio attempts if resume fails
+      });
+    } else {
+      console.log('AudioContext state on event ' + event.type + ': ' + audioCtx.state);
+    }
+
+    // Attempt to play a silent sound to fully unlock the audio context on iOS
+    // This runs after the resume attempt (if any) completes
+    audioUnlockPromise.then(() => {
+      if (audioCtx.state === 'running') { // Only proceed if context is truly running
+        try {
+          const buffer = audioCtx.createBuffer(1, 1, 22050); // 1 frame, 1 channel, low sample rate
+          const source = audioCtx.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioCtx.destination);
+          source.start(0);
+          console.log('Played silent unlock sound to ensure AudioContext is active.');
+        } catch (unlockError) {
+          console.error('Error playing silent unlock sound:', unlockError.message);
+          // Not re-throwing here as the main resume might have succeeded.
+        }
+      } else {
+        console.warn('Skipping silent unlock sound as AudioContext is not in a running state (' + audioCtx.state + ').');
+      }
     }).catch(e => {
-      console.error('AudioContext resume failed on event: ' + event.type + ':', e.message);
-      // Optionally, inform the user via an alert or UI message if audio is critical
-      // alert('Could not initialize audio: ' + e.message);
-      // Consider if experienceHasBegun should be reset to allow another attempt
-      // experienceHasBegun = false; 
+      // This catch is for errors from audioCtx.resume() that were re-thrown
+      console.error('Cannot play silent unlock sound because AudioContext failed to resume or initialize properly.');
+      // alert('Audio system could not be fully initialized.'); // User-facing message
     });
-  } else if (audioCtx) {
-    console.log('AudioContext state on event ' + event.type + ': ' + audioCtx.state);
+
   } else {
     console.error('AudioContext is null even after initAudio attempt on event ' + event.type);
     // alert('Audio system could not be initialized.');
+    // experienceHasBegun = false; // Allow another attempt
   }
 }
 
 button.addEventListener("click", triggerExperience);
 button.addEventListener("touchend", triggerExperience);
+
+// Add event listeners for the iOS Safari fallback button
+const iosSafariButton = document.getElementById("iosSafariButton");
+iosSafariButton.addEventListener("click", triggerExperience);
+iosSafariButton.addEventListener("touchend", triggerExperience);
 
 canvas.addEventListener('contextmenu', e => {
   e.preventDefault();
